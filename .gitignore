@@ -36,3 +36,18 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Python ###
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+### Local data and model artifacts ###
+*.db
+*.csv
+*.pkl
+audit_reports/
+final_detection_report.csv
+verified_result.csv

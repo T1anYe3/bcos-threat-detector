@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>区块链安全态势感知系统</title>
+  <script src="/static/vue.min.js"></script>
+  <script src="/static/echarts.min.js"></script>
+  <script src="/static/axios.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #d8ecff;
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      background: radial-gradient(circle at 50% 0%, #0b1d3c 0%, #040a18 45%, #020611 100%);
+      height: 100vh;
+      overflow: hidden;
+    }
+    #app { height: 100vh; display: flex; flex-direction: column; }
+    .header {
+      height: 88px;
+      display: grid;
+      grid-template-columns: 25% 50% 25%;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(0, 245, 255, 0.25);
+      background: rgba(2, 18, 36, 0.65);
+    }
+    .header-title {
+      text-align: center;
+      font-size: 24px;
+      color: #00f5ff;
+      letter-spacing: 1px;
+      text-shadow: 0 0 10px rgba(0, 245, 255, 0.8);
+      font-weight: 700;
+    }
+    .header-left, .header-right { font-size: 13px; line-height: 1.8; }
+    .panel-wrap {
+      flex: 1;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 25% 50% 25%;
+      gap: 12px;
+      min-height: 0;
+    }
+    .column { display: grid; gap: 12px; min-height: 0; }
+    .center { grid-template-rows: 58% 42%; }
+    .left, .right { grid-template-rows: 52% 48%; }
+    .panel {
+      background: rgba(0, 20, 50, 0.48);
+      border: 1px solid rgba(24, 144, 255, 0.45);
+      box-shadow: inset 0 0 18px rgba(24, 144, 255, 0.12), 0 0 10px rgba(0, 245, 255, 0.08);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-title {
+      color: #00f5ff;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(0, 245, 255, 0.2);
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-body { padding: 10px; flex: 1; min-height: 0; }
+    .table-wrap { height: 100%; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 6px 4px; border-bottom: 1px dashed rgba(24, 144, 255, 0.25); text-align: left; }
+    th { color: #84d7ff; font-weight: 600; }
+    tr.warn td { color: #ff7a7c; }
+    .node-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .node-item {
+      border: 1px solid rgba(0, 245, 255, 0.45);
+      background: rgba(0, 245, 255, 0.08);
+      color: #7cf7ff;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
+    .chart { width: 100%; height: 100%; min-height: 210px; }
+    .risk-log {
+      height: 100%;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.65;
+      font-family: Consolas, monospace;
+    }
+    .log-item { padding: 4px 0; border-bottom: 1px dotted rgba(24, 144, 255, 0.25); }
+    .lv-CRITICAL { color: #ff4d4f; }
+    .lv-HIGH { color: #faad14; }
+    .lv-MEDIUM { color: #40a9ff; }
+    .lv-INFO { color: #52c41a; }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn, .upload-label {
+      background: linear-gradient(90deg, #0a2c63, #0f4ea0);
+      color: #d8ecff;
+      border: 1px solid rgba(0, 245, 255, 0.45);
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn.active { box-shadow: 0 0 10px rgba(0, 245, 255, 0.35); }
+    .file-input { display: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="header-left">
+      <div>{{ nowText }}</div>
+      <div>网络状态: <span :style="{color: data.network_status === 'CONNECTED' ? '#52c41a' : '#ff4d4f'}">{{ data.network_status || 'UNKNOWN' }}</span></div>
+      <div>模式: {{ data.mode || '-' }}</div>
+    </div>
+    <div class="header-title">区块链安全态势感知系统 (Blockchain Security Situational Awareness)</div>
+    <div class="header-right" style="text-align:right">
+      <div style="font-size:28px;color:#52c41a;text-shadow:0 0 8px rgba(82,196,26,0.7);">{{ data.security_score || 0 }} 分</div>
+      <div>运行时长: {{ runtime }}</div>
+      <div v-if="csvMeta.filename">当前CSV: {{ csvMeta.filename }}</div>
+    </div>
+  </div>
+
+  <div class="panel-wrap">
+    <div class="column left">
+      <div class="panel">
+        <div class="panel-title">
+          <span>链上数据实时更新</span>
+          <div class="toolbar">
+            <button class="btn" :class="{active: mode==='REALTIME'}" @click="switchRealtime">实时</button>
+            <label class="upload-label" for="csvUpload">导入CSV</label>
+            <input id="csvUpload" class="file-input" type="file" accept=".csv" @change="uploadCsv" />
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>Hash</th><th>From</th><th>状态</th></tr></thead>
+              <tbody>
+              <tr v-for="tx in data.transactions" :key="tx.hash" :class="{warn: tx.status !== '0x0' && tx.status !== '0'}">
+                <td>{{ tx.time }}</td>
+                <td>{{ tx.hash_short }}</td>
+                <td>{{ tx.from }}</td>
+                <td>{{ tx.status }}</td>
+              </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">共识节点白名单</div>
+        <div class="panel-body">
+          <div class="node-list">
+            <span v-for="node in data.sealers" :key="node" class="node-item">{{ shortNode(node) }}</span>
+            <span v-if="!data.sealers || !data.sealers.length" class="node-item">暂无节点数据</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="column center">
+      <div class="panel">
+        <div class="panel-title">实时网络流量趋势 (TPS / Gas Usage)</div>
+        <div class="panel-body"><div id="trendChart" class="chart"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">网络拓扑与威胁溯源图</div>
+        <div class="panel-body"><div id="topologyChart" class="chart"></div></div>
+      </div>
+    </div>
+
+    <div class="column right">
+      <div class="panel">
+        <div class="panel-title">多维安全感知分析</div>
+        <div class="panel-body"><div id="roseChart" class="chart"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">实时风险感知日志</div>
+        <div class="panel-body">
+          <div class="risk-log">
+            <div v-for="(log, idx) in data.threat_logs" :key="idx" class="log-item">
+              [{{ log.time }}]
+              <span :class="'lv-' + log.level">[{{ log.level }}]</span>
+              [{{ log.type }}] Hash: {{ log.hash_short }} {{ log.message }}
+            </div>
+            <div v-if="!data.threat_logs || !data.threat_logs.length">暂无风险日志</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+new Vue({
+  el: '#app',
+  data: {
+    mode: 'REALTIME',
+    bootAt: Date.now(),
+    nowText: '',
+    csvMeta: {},
+    data: {
+      network_status: 'UNKNOWN',
+      mode: '-',
+      security_score: 0,
+      transactions: [],
+      sealers: [],
+      trend: { x: [], tx_count: [], avg_gas: [] },
+      threat_distribution: [],
+      threat_logs: []
+    },
+    timer: null,
+    tickTimer: null
+  },
+  computed: {
+    runtime() {
+      const sec = Math.floor((Date.now() - this.bootAt) / 1000);
+      const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+      const s = String(sec % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    }
+  },
+  mounted() {
+    this.updateClock();
+    this.tickTimer = setInterval(this.updateClock, 1000);
+    this.loadRealtime();
+    this.timer = setInterval(() => {
+      if (this.mode === 'REALTIME') this.loadRealtime();
+    }, 5000);
+    window.addEventListener('resize', this.renderAllCharts);
+  },
+  beforeDestroy() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.tickTimer) clearInterval(this.tickTimer);
+    window.removeEventListener('resize', this.renderAllCharts);
+  },
+  methods: {
+    updateClock() {
+      this.nowText = new Date().toLocaleString();
+    },
+    shortNode(node) {
+      if (!node) return '-';
+      return node.length > 18 ? node.substring(0, 18) + '...' : node;
+    },
+    switchRealtime() {
+      this.mode = 'REALTIME';
+      this.csvMeta = {};
+      this.loadRealtime();
+    },
+    async loadRealtime() {
+      try {
+        const res = await axios.get('/api/realtime?limit=600');
+        if (res.data.status === 'success') {
+          this.data = res.data.data;
+          this.renderAllCharts();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    async uploadCsv(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      this.mode = 'CSV';
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const res = await axios.post('/api/import_csv', form, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        if (res.data.status === 'success') {
+          this.data = res.data.data;
+          this.csvMeta = res.data.data.csv_meta || {};
+          this.renderAllCharts();
+        } else {
+          alert(res.data.message || 'CSV 分析失败');
+        }
+      } catch (e) {
+        alert('CSV 分析失败，请检查文件格式与字段');
+      } finally {
+        evt.target.value = '';
+      }
+    },
+    renderAllCharts() {
+      this.renderTrend();
+      this.renderRose();
+      this.renderTopology();
+    },
+    renderTrend() {
+      const dom = document.getElementById('trendChart');
+      if (!dom) return;
+      const chart = echarts.init(dom);
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['TPS', 'AvgGas'], textStyle: { color: '#cdefff' } },
+        grid: { left: 45, right: 26, top: 36, bottom: 36 },
+        xAxis: { type: 'category', data: this.data.trend.x || [], axisLine: { lineStyle: { color: '#2a78c9' } } },
+        yAxis: [
+          { type: 'value', name: 'TPS', splitLine: { lineStyle: { color: 'rgba(24,144,255,.18)' } } },
+          { type: 'value', name: 'Gas', splitLine: { show: false } }
+        ],
+        series: [
+          {
+            name: 'TPS',
+            type: 'line',
+            smooth: true,
+            data: this.data.trend.tx_count || [],
+            itemStyle: { color: '#00f5ff' },
+            areaStyle: { color: 'rgba(0,245,255,0.18)' }
+          },
+          {
+            name: 'AvgGas',
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 1,
+            data: this.data.trend.avg_gas || [],
+            itemStyle: { color: '#faad14' }
+          }
+        ]
+      });
+    },
+    renderRose() {
+      const dom = document.getElementById('roseChart');
+      if (!dom) return;
+      const chart = echarts.init(dom);
+      chart.setOption({
+        tooltip: { trigger: 'item' },
+        legend: { top: 0, textStyle: { color: '#cdefff', fontSize: 11 } },
+        series: [{
+          name: 'Threat',
+          type: 'pie',
+          radius: ['18%', '72%'],
+          center: ['50%', '58%'],
+          roseType: 'area',
+          data: this.data.threat_distribution || [],
+          color: ['#ff4d4f', '#faad14', '#1890ff', '#13c2c2', '#52c41a', '#722ed1']
+        }]
+      });
+    },
+    renderTopology() {
+      const dom = document.getElementById('topologyChart');
+      if (!dom) return;
+      const nodes = (this.data.sealers || []).map((s) => ({
+        name: this.shortNode(s),
+        symbolSize: 26,
+        itemStyle: { color: '#1890ff' }
+      }));
+      nodes.push({ name: 'FISCO-BCOS', symbolSize: 44, itemStyle: { color: '#00f5ff' } });
+      const links = (this.data.sealers || []).map((s) => ({ source: 'FISCO-BCOS', target: this.shortNode(s) }));
+      const chart = echarts.init(dom);
+      chart.setOption({
+        series: [{
+          type: 'graph',
+          layout: 'force',
+          roam: true,
+          force: { repulsion: 260, edgeLength: 80 },
+          label: { show: true, color: '#d8ecff', fontSize: 10 },
+          lineStyle: { color: 'rgba(0,245,255,.45)' },
+          data: nodes,
+          links: links
+        }]
+      });
+    }
+  }
+});
+</script>
+</body>
+</html>

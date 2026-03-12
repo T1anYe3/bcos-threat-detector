@@ -3,6 +3,14 @@ package org.example;
 import java.math.BigInteger;
 
 public class InstructionAnalyzer {
+    public static class DecodeResult {
+        public String callType = "UNKNOWN";
+        public String methodId = "";
+        public String methodName = "Unknown";
+        public int isSensitive = 0;
+        public int decodeSuccess = 0;
+        public String argSummary = "";
+    }
 
     /**
      * 对外的主入口方法
@@ -10,31 +18,56 @@ public class InstructionAnalyzer {
      * @param toAddress 交易的接收方地址 (用于判断是否为部署交易)
      */
     public static void decode(String input, String toAddress) {
+        DecodeResult result = analyze(input, toAddress);
+        System.out.println(">>> 指令类型: [" + result.callType + "]");
+        if (result.methodId != null && !result.methodId.isEmpty()) {
+            System.out.println("    -> 函数签名 Hash: " + result.methodId);
+        }
+        if (result.methodName != null && !result.methodName.isEmpty()) {
+            System.out.println("    -> 识别函数: " + result.methodName);
+        }
+        if (result.argSummary != null && !result.argSummary.isEmpty()) {
+            System.out.println("    -> 参数摘要: " + result.argSummary);
+        }
+    }
+
+    /**
+     * 结构化语义分析入口：供实时监控/数据库写入使用。
+     */
+    public static DecodeResult analyze(String input, String toAddress) {
+        DecodeResult result = new DecodeResult();
+
         // 1. 基础校验
         if (input == null || input.length() < 10) {
-            System.out.println("    -> [状态] Input 为空或格式不正确");
-            return;
+            result.callType = "INVALID_INPUT";
+            result.methodName = "InvalidInput";
+            result.argSummary = "input empty/short";
+            return result;
         }
 
         // 2. 判断是否为【合约部署】
         // 逻辑：To 地址为空/全0，或者 Input 以 Solidity 标准部署头(60806040)开头
         if (isContractDeploy(toAddress, input)) {
-            System.out.println(">>> 指令类型: [合约部署] (Contract Deployment)");
-            System.out.println("    -> 详情: 正在链上创建新合约");
-            System.out.println("    -> 数据: 包含合约二进制代码 (Bytecode)，长度 " + input.length() + " 字符");
-            return; // 部署交易不需要解析参数，直接结束
+            result.callType = "CONTRACT_DEPLOYMENT";
+            result.methodName = "ContractDeployment";
+            result.decodeSuccess = 1;
+            result.argSummary = "bytecode_len=" + input.length();
+            return result;
         }
 
         // 3. 判断是否为【普通转账】(非合约调用)
         // 逻辑：To 有地址，但 Input 只有 "0x" 或为空
         if (input.equals("0x")) {
-            System.out.println(">>> 指令类型: [原生代币转账] (Native Token Transfer)");
-            return;
+            result.callType = "NATIVE_TRANSFER";
+            result.methodName = "NativeTransfer";
+            result.decodeSuccess = 1;
+            return result;
         }
 
         // 4. 进入【函数调用】解析流程
-        System.out.println(">>> 指令类型: [函数调用] (Function Call)");
-        parseFunctionCall(input);
+        result.callType = "FUNCTION_CALL";
+        parseFunctionCall(input, result);
+        return result;
     }
 
     /**
@@ -55,42 +88,49 @@ public class InstructionAnalyzer {
     /**
      * 核心解析逻辑：识别函数签名并解码参数
      */
-    private static void parseFunctionCall(String input) {
+    private static void parseFunctionCall(String input, DecodeResult result) {
         // 截取函数签名 Hash (前10位)
         String methodId = input.substring(0, 10);
-        System.out.println("    -> 函数签名 Hash: " + methodId);
+        result.methodId = methodId;
 
         // --- 开始 Case 匹配 ---
 
         // Case 1: set(string) - ID: 0x4ed3885e
         if ("0x4ed3885e".equals(methodId)) {
-            System.out.println("    -> 识别为函数: set(string)");
-            decodeStringParam(input);
+            result.methodName = "set(string)";
+            result.isSensitive = 1;
+            result.decodeSuccess = 1;
+            String val = decodeStringParam(input);
+            result.argSummary = val.isEmpty() ? "set(<decode_failed>)" : ("set(\"" + val + "\")");
         }
         // Case 2: transfer(address,uint256) - ID: 0xa9059cbb
         else if ("0xa9059cbb".equals(methodId)) {
-            System.out.println("    -> 识别为函数: transfer(address,uint256)");
-            decodeTransferParams(input);
+            result.methodName = "transfer(address,uint256)";
+            result.decodeSuccess = 1;
+            result.argSummary = decodeTransferParams(input);
         }
         // Case 3: get() - ID: 0x6d4ce63c
         else if ("0x6d4ce63c".equals(methodId)) {
-            System.out.println("    -> 识别为函数: get()");
-            System.out.println("    -> 参数: 无");
+            result.methodName = "get()";
+            result.decodeSuccess = 1;
+            result.argSummary = "no_args";
         }
         // 未知函数
         else {
-            System.out.println("    -> 未知函数 (盲解)");
+            result.methodName = "UnknownFunction";
+            result.decodeSuccess = 0;
+            result.argSummary = "fallback_generic_decode";
             GenericDecoder.decode(input);
         }
     }
 
     // --- 下面是具体的参数解码工具方法 ---
 
-    private static void decodeStringParam(String input) {
+    private static String decodeStringParam(String input) {
         try {
             String params = input.substring(10);
             // 简单校验 string 编码长度
-            if (params.length() < 128) return;
+            if (params.length() < 128) return "";
 
             // 读取长度 (跳过前64位偏移量，取后64位长度)
             String lengthHex = params.substring(64, 128);
@@ -101,28 +141,27 @@ public class InstructionAnalyzer {
             int dataEnd = dataStart + (length * 2);
             if (params.length() >= dataEnd) {
                 String contentHex = params.substring(dataStart, dataEnd);
-                String result = hexToAscii(contentHex);
-                System.out.println("    -> 解析内容: set(\"" + result + "\")");
+                return hexToAscii(contentHex);
             }
         } catch (Exception e) {
-            System.out.println("    -> String 解析错误");
+            return "";
         }
+        return "";
     }
 
-    private static void decodeTransferParams(String input) {
+    private static String decodeTransferParams(String input) {
         try {
             String params = input.substring(10);
-            if (params.length() < 128) return;
+            if (params.length() < 128) return "decode_short_params";
 
             String toHex = params.substring(0, 64);
             String amountHex = params.substring(64, 128);
 
             String toAddress = "0x" + toHex.substring(24);
             BigInteger amount = new BigInteger(amountHex, 16);
-
-            System.out.println("    -> 解析内容: 向 " + toAddress + " 转账 " + amount);
+            return "to=" + toAddress + ",amount=" + amount;
         } catch (Exception e) {
-            System.out.println("    -> Transfer 解析错误");
+            return "decode_transfer_error";
         }
     }
 
