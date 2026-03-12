@@ -85,7 +85,8 @@
       │        ├─ echarts.min.js
       │        └─ axios.min.js
       └─ resources
-Quick Start
+---
+**Quick Start**
 1. 环境准备
 # Java 11+ & Maven 已安装
 # Python 3.10+ 已安装
