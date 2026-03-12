@@ -17,7 +17,7 @@
 
 - **实时链上数据采集**
   - 基于 FISCO BCOS Java SDK，持续拉取区块、交易与回执
-  - 将交易写入本地 `SQLite` 数据库 `blockchain_data.db`
+  - 将交易写入本地数据库 `blockchain_data.db`
   - 同步链上共识节点白名单（`nodes` 表）
 
 - **语义解码与语义安全检测**
@@ -60,7 +60,7 @@
 
 ---
 
-## 🧱 目录结构（核心部分）
+## 🧱 目录结构
 
 ```text
 .
@@ -85,4 +85,22 @@
       │        ├─ echarts.min.js
       │        └─ axios.min.js
       └─ resources
+Quick Start
+1. 环境准备
+# Java 11+ & Maven 已安装
+# Python 3.10+ 已安装
+pip install flask flask-cors pandas numpy scikit-learn
+确认链配置 config.toml 正确指向你的 FISCO BCOS 节点。
+
+2. 启动链上实时采集
+在项目根目录：
+
+mvn -DskipTests exec:java "-Dexec.mainClass=org.example.RealTimeMonitor"
+或在 IDE 中运行 RealTimeMonitor.main()。
+
+3. 启动检测后端与可视化
+python src/main/java/org/example/app_json.py
+浏览器访问：
+
+http://127.0.0.1:5000
          └─ config.toml                     # 另一份链配置（按实际情况放置）
