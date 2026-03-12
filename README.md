@@ -85,23 +85,26 @@
       │        ├─ echarts.min.js
       │        └─ axios.min.js
       └─ resources
+            └─ config.toml                     # 另一份链配置（按实际情况放置）
+```
 ---
+
 ## Quick Start
-1. 环境准备
-# Java 11+ & Maven 已安装
-# Python 3.10+ 已安装
+**1. 环境准备**
+Java 11+ & Maven 已安装
+Python 3.10+ 已安装
 pip install flask flask-cors pandas numpy scikit-learn
 确认链配置 config.toml 正确指向你的 FISCO BCOS 节点。
 
-2. 启动链上实时采集
+**2. 启动链上实时采集**
 在项目根目录：
 
 mvn -DskipTests exec:java "-Dexec.mainClass=org.example.RealTimeMonitor"
 或在 IDE 中运行 RealTimeMonitor.main()。
 
-3. 启动检测后端与可视化
+**3. 启动检测后端与可视化**
 python src/main/java/org/example/app_json.py
 浏览器访问：
 
 http://127.0.0.1:5000
-         └─ config.toml                     # 另一份链配置（按实际情况放置）
+         
